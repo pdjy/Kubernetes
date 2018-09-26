@@ -1,0 +1,13 @@
+mkdir /etc/openvpn/easy-rsa/keys/
+cp /usr/share/doc/openvpn/examples/easy-rsa/2.0/* /etc/openvpn/easy-rsa/
+nano vars
+source vars
+./clean-all
+./build-dh
+./pkitool --initca
+./pkitool --server ServerVPN
+openvpn --genkey --secret ta.key
+sudo /etc/init.d/openvpn start
+scp 
+openvpn --script-security 2 --config server.conf
+openvpn --script-security 2 --config client.conf

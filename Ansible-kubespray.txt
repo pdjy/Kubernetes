@@ -1,0 +1,171 @@
+#install tsocks for ssh behind proxy and replace in /etc/tsocks.config (server=IP) IP=yourproxy 
+
+apt-get update
+apt-get -y upgrade
+
+#install python for ubuntu
+apt-get install -y build-essential libpq-dev libssl-dev openssl libffi-dev zlib1g-dev
+apt-get install -y python3-pip python3-dev
+apt-cache search python3.6
+add-apt-repository ppa:jonathonf/python-3.6
+apt-get update
+apt-get install -y python3.6 python3.6-venv python3.6-doc binfmt-support
+apt-get install -y yum-utils
+python3 -m pip install netaddr
+apt install python-pip
+pip install --upgrade Jinja2
+
+
+#install ansible for ubuntu
+apt-add-repository ppa:ansible/ansible
+apt-get update -y
+apt-get install ansible -y
+
+#install openssl, openvpn, openssh
+apt-get install -y openssh-client openssh-server
+apt-get install -y openvpn
+apt-get install -y openssl
+
+#generate SSH KEY
+ssh-keygen -t rsa -b 4096
+
+#copy Key to node
+ssh-copy-id root@IPV4
+
+#test ansible buy pinging all the nodes
+tsocks ansible -m ping all
+#ansible -m ping master01
+#ansible -m ping worker01
+
+#CONFIGURE ANSIBLE
+#add [servers]
+#IPV4 ansible_connection=ssh ansible_ssh_user=user ansible_ssh_pass=password
+nano /etc/ansible/hosts
+
+#ckeck the memory usage on client node
+ansible -m shell -a 'free -m' IPV4/DOMAIN
+
+#check the partition size of the client node
+ansible -m shell -a 'df -h' IPV4/DOMAIN
+
+git clone https://github.com/kubernetes-incubator/kubespray
+cd kubespray
+cp -r inventory inventaire_kubernetes
+
+declare -a IPS=(IPV4 IPV4 IPV4)
+CONFIG_FILE=inventory/local/hosts.ini python3.6 contrib/inventory_builder/inventory.py ${IPS[@]}
+
+sudo pip install -r requirements.txt
+#To Install hashivault
+pip install ansible-modules-hashivault
+#to update cryptography
+pip install --upgrade cryptography
+
+#Copy this path
+cd /usr/lib/python2.7/dist-packages/ansible/modules
+cp -rp /usr/local/lib/python2.7/dist-packages/ansible/modules/hashivault .
+
+#to edit and comment line 70 -invetory_hostname ==
+#roles/etcd/tasks/gen_certs_script.yml
+
+#to create the cluster 
+ansible-playbook -T 300 -i inventory/local/hosts.ini  cluster.yml -b -v --private-key=~/.ssh/id_rsa
+
+#to add node or worker
+ansible-playbook -T 300 -i inventory/local/hosts.ini scale.yml -b -v --private-key=~/.ssh/id_rsa
+
+#to stop Swap
+ansible master01 -m shell -a "swapon -s"
+ansible master01 -m shell -a "swapoff -a"
+#or modify the file roles/bootstrap-os/tasks/main.yml and add
+#- name: Remove swapfile from /etc/fstab
+#  mount:
+#    name: swap
+#    fstype: swap
+#    state: absent
+#
+#- name: Disable swap
+#  command: swapoff -a
+
+#follow this repository to modify these files inside : https://github.com/kubernetes-incubator/kubespray/pull/1868/commits/be6a1b0e07c17b1e4a5dd1705b3c3ea92b8773e3
+
+#to check if cluster is healthy : etcdctl --endpoints https://127.0.0.1:2379 --ca-file=/etc/ssl/etcd/ssl/ca.pem --cert-file=/etc/ssl/etcd/ssl/member-master01.pem --key-file=/etc/ssl/etcd/ssl/member-master01-key.pem --debug cluster-health
+#curl --cert /etc/ssl/etcd/ssl/member-master01.pem --key /etc/ssl/etcd/ssl/member-master01-key.pem https://127.0.0.1:2379/health
+
+
+#To check listening port: ss -l4n | grep 2380
+
+#To edit kubernetes
+# kubectl edit service kubernetes-dashboard -n kube-system
+
+#Edit roles/kubernetes-apps/ingress_controller/cert_manager/templates/cert-manager-deploy.yml.j2 in line 38
+#{% if cert_manager_controller_http_proxy %}
+#            - name: HTTP_PROXY
+#              value: {{ cert_manager_controller_http_proxy }}
+#            {% endif %}
+#            {% if cert_manager_controller_https_proxy %}
+#            - name: HTTPS_PROXY
+#              value: {{ cert_manager_controller_https_proxy }}
+#            {% endif %}
+#            {% if cert_manager_controller_no_proxy %}
+#            - name: NO_PROXY
+#              value: {{ cert_manager_controller_no_proxy }}
+#            {% endif %}
+
+
+#Edit  roles/kubernetes-apps/ingress_controller/cert_manager/defaults/main.yml in line 7
+#cert_manager_controller_http_proxy: ""
+#cert_manager_controller_https_proxy: ""
+#cert_manager_controller_no_proxy: ""
+
+#Edit roles/kubernetes/preinstall/tasks/verify-settings.yml in case the memory is to small
+
+#Edit nano roles/kubernetes/preinstall/tasks/verify-settings.yml comment the part to "stop if ip var does not match local ip" 
+
+#Comment empty part (when) in roles/etcd/tasks/main.yml
+###(wait before using it) edit roles/network_plugin/calico/tasks/main.yml and replace (node-) to (member-) in "- name: Calico | wait for etcd"
+
+#export ETCDCTL_ENDPOINT=https://10.192.176.153:2379
+#to launch the kubernetes dashboard
+https://10.192.176.153:6443/api/v1/namespaces/kube-system/services/https:kubernetes-dashboard:/proxy/#!/login
+#to create a dashboard service
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/master/src/deploy/recommended/kubernetes-dashboard.yaml
+kubectl create serviceaccount cluster-admin-dashboard-sa
+
+#to create and get the token value
+kubectl get secret | grep cluster-admin-dashboard-sa
+kubectl describe secret cluster-admin-dashboard-sa-token-kv5lv
+
+#for the metric
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/kops/master/addons/metrics-server/v1.8.x.yaml
+
+#to configure the metric
+$ kubectl -n kube-system edit deploy metrics-server
+
+#look in section spec/template/spec/command for something like:
+#- --source=kubernetes
+#and replace that line with
+- --source=kubernetes.summary_api:https://kubernetes.default?kubeletHttps=true&kubeletPort=10250&insecure=true
+
+#metric admin access
+sudo cp -p Downloads/linux-386/helm /usr/local/bin/
+helm init
+kubectl -n kube-system create sa tiller
+kubectl create clusterrolebinding tiller --clusterrole cluster-admin --serviceaccount=kube-system:tiller
+helm init --service-account tiller --upgrade
+
+#deploy prometheus
+helm repo add coreos https://s3-eu-west-1.amazonaws.com/coreos-charts/stable/
+helm install coreos/prometheus-operator --name prometheus-operator --namespace monitoring 
+helm install coreos/kube-prometheus --name kube-prometheus --set global.rbacEnable=true --namespace monitoring
+
+#My app
+kubectl run perrault-restaurant --image=proa/perrault_resto:v1 --requests=cpu=10m --port=8080
+kubectl expose deployment perrault-restaurant --name=restaurant-service --type=LoadBalancer --port=8080 --target-port=8080
+kubectl autoscale deployment perrault-restaurant --cpu-percent=11 --min=1 --max=30
+
+#check capacity
+kubectl get hpa
+kubectl top pod --all-namespaces
+kubectl top node
+

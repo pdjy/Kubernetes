@@ -1,0 +1,95 @@
+rm -r /usr/local/bin/ansible*
+rm -r /usr/local/bin/c*
+rm -r /usr/local/bin/e*
+rm -r /usr/local/bin/k*
+rm -r /etc/ssl/etcd
+rm -r /etc/calico
+rm -r /etc/cni
+rm -r /etc/kubernetes
+rm -r /root/.kube
+rm -r /etc/bash_completion.d/kubectl.sh
+rm -r /etc/modules-load.d/kubespray-br_netfilter.conf
+rm -r /etc/systemd/system/kubelet.service
+rm -r /etc/systemd/system/etcd.service
+rm -r /etc/systemd/system/multi-user.target.wants/kubelet.service
+rm -r /etc/systemd/system/multi-user.target.wants/etcd.service
+rm -r /usr/local/share/ca-certificates/*
+rm -r /etc/etcd.env
+rm -r /var/lib/etcd
+rm -r /var/backups/etcd*
+rm -r /var/lib/cni
+rm -r /var/lib/kubelet
+rm -r /var/lib/docker/tmp/*
+rm -r ~/.ansible/tmp/*
+rm -r /tmp/*
+
+
+systemctl stop kubelet
+systemctl stop docker
+rm -rf /var/lib/cni/
+rm -rf /etc/cni/net.d
+rm -rf /run/flannel
+rm -rf /run/calico
+rm -rf /etc/calico
+rm -rf /var/etcd/calico-data/
+
+
+iptables -t nat -F
+iptables -t mangle -F
+iptables -F
+iptables -X
+iptables -P INPUT ACCEPT
+iptables -P FORWARD ACCEPT
+iptables -P OUTPUT ACCEPT
+
+
+ip6tables -t nat -F
+ip6tables -t mangle -F
+ip6tables -F
+ip6tables -X
+ip6tables -P INPUT ACCEPT
+ip6tables -P FORWARD ACCEPT
+ip6tables -P OUTPUT ACCEPT
+
+iptables -L -v -n 
+iptables -L -v -n -t nat
+conntrack -L 
+ipset list
+# if using calico
+modprobe -r ipip
+
+lsmod|grep br_netfilter
+modprobe br_netfilter
+systemctl start docker
+systemctl start kubelet
+
+docker system prune -a
+docker volume prune
+clear
+ufw status
+nslookup google.com
+systemctl daemon-reload
+systemctl restart docker
+pip uninstall -y -r requirements.txt
+pip3 uninstall -y -r requirements.txt
+apt-get install -y build-essential libpq-dev libssl-dev openssl libffi-dev zlib1g-dev
+apt-get install -y python3-pip python3-dev
+apt-cache search python3.6
+add-apt-repository ppa:jonathonf/python-3.6
+apt-get update 
+apt-get install -y python3.6
+apt-get install -y yum-utils
+python3 -m pip install netaddr
+pip install --upgrade Jinja2
+apt-add-repository ppa:ansible/ansible
+apt-get update -y
+apt-get install ansible -y
+pip install -r requirements.txt
+pip3 install -r requirements.txt
+pip install ansible-modules-hashivault
+pip3 install ansible-modules-hashivault
+pip install --upgrade cryptography
+pip3 install --upgrade cryptography
+nslookup google.com
+
+
